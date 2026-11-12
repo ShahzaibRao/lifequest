@@ -1,0 +1,16 @@
+# LifeQuest backend dependencies.
+# Pinned loosely (major.minor) so a fresh install is reproducible
+# without freezing to a single patch release on day one.
+# Alembic is added with the first real endpoint migration, not here:
+# migration 001 is plain SQL and is the baseline (see README-schema.md).
+fastapi>=0.115,<0.120
+uvicorn[standard]>=0.30,<0.35
+pydantic>=2.7,<3.0
+pydantic-settings>=2.2,<3.0
+email-validator>=2.0,<3.0
+SQLAlchemy>=2.0,<2.1
+psycopg[binary]>=3.1,<4.0
+PyJWT>=2.8,<3.0
+bcrypt>=4.0,<5.0
+h3>=4.0,<5.0
+redis>=5.0,<6.0

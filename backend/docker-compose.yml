@@ -1,0 +1,82 @@
+# LifeQuest — production (home Ubuntu server).
+# Services: api (FastAPI, 2 uvicorn workers), db (PostGIS), worker
+# (background evaluation jobs), redis (read cache + live dots),
+# cloudflared (Cloudflare Tunnel -> api.raoshahzaib.site).
+# The API runs WITHOUT --reload: restart it after a code change
+# (docker compose restart api). The worker has no auto-reload either
+# (docker compose restart worker).
+services:
+  api:
+    build: .
+    container_name: lifequest-api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-lifequest}:${POSTGRES_PASSWORD:-lifequest-dev}@db:5432/${POSTGRES_DB:-lifequest}
+      JWT_SECRET: ${JWT_SECRET}
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./app:/code/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+  db:
+    image: postgis/postgis:16-3.4
+    container_name: lifequest-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-lifequest}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lifequest-dev}
+      POSTGRES_DB: ${POSTGRES_DB:-lifequest}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - lifequest-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-lifequest} -d $${POSTGRES_DB:-lifequest}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+  worker:
+    build: .
+    container_name: lifequest-worker
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-lifequest}:${POSTGRES_PASSWORD:-lifequest-dev}@db:5432/${POSTGRES_DB:-lifequest}
+      JWT_SECRET: ${JWT_SECRET}
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./app:/code/app
+    command: python -m app.worker
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+  redis:
+    image: redis:7-alpine
+    container_name: lifequest-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    command: redis-server --appendonly no --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: lifequest-tunnel
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      api:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  lifequest-data:
