@@ -20,6 +20,7 @@ import AchievementsScreen from "./src/screens/AchievementsScreen";
 import ProfileScreen from "./src/screens/ProfileScreen";
 import NotificationsScreen from "./src/screens/NotificationsScreen";
 import { LanguageProvider, useLanguage } from "./src/i18n/LanguageContext";
+import { useAppUpdate } from "./src/updates/useAppUpdate";
 import { fetchNotifSummary } from "./src/notifications/summary";
 import { apiJson } from "./src/api/client";
 import Avatar, { AvatarPreset } from "./src/components/Avatar";
@@ -171,6 +172,7 @@ function MainTabs() {
 
 function Root() {
   const { user, loading } = useAuth();
+  useAppUpdate(!!user);
   const { t } = useLanguage();
   if (loading) {
     return (

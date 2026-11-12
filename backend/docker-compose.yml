@@ -1,9 +1,7 @@
-# LifeQuest — ONE compose file, TWO environments.
-# Staging (WSL):  docker compose up -d            (api/db/worker/redis only)
-# Production:     docker compose --profile prod up -d   (+ cloudflared tunnel)
+# LifeQuest — production (home Ubuntu server).
 # Services: api (FastAPI, 2 uvicorn workers), db (PostGIS), worker
 # (background evaluation jobs), redis (read cache + live dots),
-# cloudflared (Cloudflare Tunnel -> api.raoshahzaib.site, prod profile only).
+# cloudflared (Cloudflare Tunnel -> api.raoshahzaib.site).
 # The API runs WITHOUT --reload: restart it after a code change
 # (docker compose restart api). The worker has no auto-reload either
 # (docker compose restart worker).

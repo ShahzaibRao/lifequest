@@ -35,7 +35,7 @@ if ! grep -q "^CLOUDFLARE_TUNNEL_TOKEN=.\+" .env 2>/dev/null; then
 fi
 
 echo "== docker compose up =="
-docker compose --profile prod up -d --build
+docker compose up -d --build
 
 echo "== running migrations (fresh DB) =="
 for f in migrations/*.sql; do
