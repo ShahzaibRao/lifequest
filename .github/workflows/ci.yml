@@ -53,7 +53,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ secrets.DOCKERHUB_USERNAME }}/lifequest-api
+          images: raoshahzaib/lifequest-api
           tags: |
             type=raw,value=staging,enable=${{ github.ref == 'refs/heads/staging' }}
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
