@@ -1,0 +1,67 @@
+# LifeQuest CI — test + build + push to Docker Hub.
+# staging branch -> image tag `staging` (WSL staging tests it).
+# main branch    -> image tags `latest` + `sha-<short>` (production).
+# Production deploy is a separate job on the self-hosted runner (home server).
+name: LifeQuest CI
+
+on:
+  push:
+    branches: [staging, main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install backend deps
+        run: pip install --no-cache-dir -r backend/requirements.txt
+      - name: Compile-check all backend code
+        run: python -m compileall backend/app
+
+  mobile-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - name: Install mobile deps
+        working-directory: mobile
+        run: npm ci
+      - name: Typecheck (tsc)
+        working-directory: mobile
+        run: npx tsc --noEmit
+
+  build-push:
+    needs: [backend-check, mobile-check]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Docker Hub login
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: raoshahzaib/lifequest-api
+          tags: |
+            type=raw,value=staging,enable=${{ github.ref == 'refs/heads/staging' }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=sha,enable=${{ github.ref == 'refs/heads/main' }}
+      - name: Build + push image
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
