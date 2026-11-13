@@ -1,7 +1,23 @@
-# LifeQuest CI — test + build + push to Docker Hub.
+# LifeQuest CI — test + scan + build + push to Docker Hub.
 # staging branch -> image tag `staging` (WSL staging tests it).
 # main branch    -> image tags `latest` + `sha-<short>` (production).
-# Production deploy is a separate job on the self-hosted runner (home server).
+# Production deploy is pull-based / manual from the server (see DEPLOY.md).
+#
+# Quality gates (in order):
+#   1. backend-check / mobile-check  — compile + typecheck (blocking)
+#   2. backend-audit / mobile-audit  — known-vulnerable dependencies
+#      (report-only for now: continue-on-error, see the job logs)
+#   3. build-push                    — Docker image -> Docker Hub
+#   4. trivy-scan                    — image vulnerabilities (blocking on
+#      CRITICAL only; HIGH is reported in the job log table but does not
+#      block — the Debian base image carries HIGHs with no fix yet, and
+#      the app never uses those OS tools; results also in the Security
+#      tab as SARIF)
+#   5. smoke-test                    — run the pushed image, hit /health
+#      (blocking: proves the image actually starts — distroless has no
+#      shell, so a missing shared library would only show up here).
+#      /health never touches the database, so no Postgres is needed.
+# CodeQL (source-code scanning) lives in its own workflow: codeql.yml.
 name: LifeQuest CI
 
 on:
@@ -39,6 +55,42 @@ jobs:
         working-directory: mobile
         run: npx tsc --noEmit
 
+  backend-audit:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Audit Python dependencies (pip-audit)
+        # Reports known vulnerabilities in backend/requirements.txt.
+        # Report-only for now (continue-on-error). Remove that line to make
+        # it a blocking gate once the findings are triaged.
+        run: |
+          pip install --no-cache-dir pip-audit
+          pip-audit -r backend/requirements.txt
+
+  mobile-audit:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - name: Install mobile deps
+        working-directory: mobile
+        run: npm ci
+      - name: Audit JS dependencies (npm audit, high+)
+        # Reports high/critical vulnerabilities in mobile/package-lock.json.
+        # Report-only for now (continue-on-error). Remove that line to make
+        # it a blocking gate once the findings are triaged.
+        working-directory: mobile
+        run: npm audit --audit-level=high
+
   build-push:
     needs: [backend-check, mobile-check]
     runs-on: ubuntu-latest
@@ -58,6 +110,17 @@ jobs:
             type=raw,value=staging,enable=${{ github.ref == 'refs/heads/staging' }}
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=sha,enable=${{ github.ref == 'refs/heads/main' }}
+      - name: Pick distroless variant (debug for staging, nonroot for main)
+        # Staging gets the :debug flavour (busybox shell, for debugging
+        # inside the container); main/production gets :nonroot (no shell).
+        # Same Python 3.13, same Debian 13 base, same libraries — only
+        # the shell differs, so staging still matches production.
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/staging" ]; then
+            echo "VARIANT=debug" >> "$GITHUB_ENV"
+          else
+            echo "VARIANT=nonroot" >> "$GITHUB_ENV"
+          fi
       - name: Build + push image
         uses: docker/build-push-action@v6
         with:
@@ -65,3 +128,78 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            DISTROLESS_VARIANT=${{ env.VARIANT }}
+
+  trivy-scan:
+    needs: [build-push]
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    steps:
+      - name: Which image tag was just pushed?
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/staging" ]; then
+            echo "IMAGE=raoshahzaib/lifequest-api:staging" >> "$GITHUB_ENV"
+          else
+            echo "IMAGE=raoshahzaib/lifequest-api:latest" >> "$GITHUB_ENV"
+          fi
+      - name: Scan image with Trivy (fail on CRITICAL only)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL
+          # SARIF is built with ALL severities by default, which makes the
+          # exit-code check see HIGHs too. Limit it so the gate only sees
+          # CRITICAL (HIGH stays visible in the table step below).
+          limit-severities-for-sarif: true
+          exit-code: "1"
+      - name: Upload Trivy results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
+      - name: Show Trivy findings as a table (for the job log)
+        # The SARIF step above is the blocking gate; this step just prints
+        # the same findings in readable form so we can see exactly which
+        # packages/versions are flagged without opening the Security tab.
+        # Report-only (continue-on-error) — the gate already ran above.
+        if: always()
+        continue-on-error: true
+        run: trivy image --severity CRITICAL,HIGH --exit-code 0 "${{ env.IMAGE }}"
+
+  smoke-test:
+    needs: [build-push]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Which image tag was just pushed?
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/staging" ]; then
+            echo "IMAGE=raoshahzaib/lifequest-api:staging" >> "$GITHUB_ENV"
+          else
+            echo "IMAGE=raoshahzaib/lifequest-api:latest" >> "$GITHUB_ENV"
+          fi
+      - name: Run the image and hit /health (no DB needed)
+        # /health never touches the database, so dummy env values are
+        # enough. If the image cannot start (e.g. a missing shared
+        # library in distroless), this fails here — not in production.
+        run: |
+          docker run -d --name lifequest-smoke -p 8000:8000 \
+            -e DATABASE_URL=postgresql+psycopg://lifequest:lifequest@localhost:5432/lifequest \
+            -e JWT_SECRET=smoke-test-secret \
+            "${{ env.IMAGE }}"
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8000/api/v1/health | grep -q '"status":"ok"'; then
+              echo "SMOKE OK: /health returned status ok"
+              docker logs lifequest-smoke --tail 5
+              docker rm -f lifequest-smoke
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "SMOKE FAILED: /health never returned ok"
+          docker logs lifequest-smoke --tail 30
+          docker rm -f lifequest-smoke
+          exit 1
