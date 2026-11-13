@@ -13,8 +13,10 @@
 # cloudflared (OPTIONAL Cloudflare Tunnel -> your own domain).
 #
 # api + worker use the SAME Docker Hub image, different commands:
-#   api    -> uvicorn app.main:app ...
-#   worker -> python -m app.worker
+#   api    -> /usr/bin/python3 -m uvicorn app.main:app ...
+#   worker -> /usr/bin/python3 -m app.worker
+# The image is distroless (no shell, no `uvicorn`/`python` binary on
+# PATH), so commands must use the absolute python3 path + -m.
 # IMAGE_TAG picks the tag: staging / latest (default) / sha-<commit>.
 #
 # The API runs WITHOUT --reload: restart it after a code change
@@ -50,7 +52,7 @@ services:
       REDIS_URL: redis://redis:6379/0
     ports:
       - "${API_PORT:-8000}:8000"
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+    command: /usr/bin/python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
     depends_on:
       db:
         condition: service_healthy
@@ -81,7 +83,7 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://lifequest:lifequest@db:5432/lifequest}
       JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-me-in-production}
       REDIS_URL: redis://redis:6379/0
-    command: python -m app.worker
+    command: /usr/bin/python3 -m app.worker
     depends_on:
       db:
         condition: service_healthy
