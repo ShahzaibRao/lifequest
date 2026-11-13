@@ -39,7 +39,14 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --target /app/deps -r requirements.txt
 
 # ---------- Stage 2: runtime (distroless) ----------
-FROM gcr.io/distroless/python3-debian13:nonroot
+# DISTROLESS_VARIANT picks the distroless flavour:
+#   nonroot (default, production) — no shell, runs as user 65532.
+#   debug   (staging)             — same Python/base/libs, plus a
+#     busybox shell so you can `docker exec` in and debug.
+# CI passes debug for the staging branch and nonroot for main, so
+# staging matches production except for the shell.
+ARG DISTROLESS_VARIANT=nonroot
+FROM gcr.io/distroless/python3-debian13:${DISTROLESS_VARIANT}
 
 WORKDIR /app
 
