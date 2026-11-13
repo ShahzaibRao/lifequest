@@ -11,174 +11,105 @@ EAS Build / EAS Update (OTA).
 > **Rulebook is the authority.** Territory / XP / anti-cheat rules are locked in
 > `territory-rulebook-v1.md` (in the workspace, not this repo). Rulebook > HLD > LLD.
 
----
-
 ## Repo layout
 
 ```
 lifequest/
-├── backend/            # FastAPI API + worker (Docker Compose)
+├── backend/            # FastAPI API + worker
 │   ├── app/            # routers, models, services, core
 │   ├── migrations/     # plain-SQL migrations 001–009
-│   ├── Dockerfile
-│   ├── docker-compose.yml
-│   └── deploy-backend.sh
+│   ├── Dockerfile      # distroless python3.13
+│   └── docker-compose.yml
 ├── mobile/             # Expo / React Native app (SDK 58)
 │   ├── src/            # api, auth, screens, walk, sync, map, i18n, health, cache
-│   ├── app.json        # name LifeQuest, package com.raoshahzaib.lifequest, slug "mobile"
+│   ├── app.json        # LifeQuest, com.raoshahzaib.lifequest, slug "mobile"
 │   └── eas.json        # build profiles: development / preview / production
-├── .github/workflows/ci.yml
-└── README.md
+├── .github/workflows/  # ci.yml, codeql.yml
+└── DEPLOY.md           # full deploy guide
 ```
-
----
 
 ## Environments
 
 | | Staging | Production |
 |---|---|---|
-| Where | WSL dev stack on the dev machine (`~/lifequest/`) | Home Ubuntu server `192.168.2.105`, user `eilaf` |
-| API | `http://192.168.5.100:8000/api/v1` (LAN, via portproxy → WSL) | `https://api.raoshahzaib.site/api/v1` (Cloudflare Tunnel) |
-| Containers | api, db, worker, redis (no tunnel) | api, db, worker, redis, cloudflared tunnel |
+| Where | **Home lab server** (Tailscale `100.120.155.67`, folder `/home/eilaf/lifequest-staging/`) | **Oracle Cloud Kubernetes** (being built — main users go here) |
+| API | `https://api.raoshahzaib.site/api/v1` (Cloudflare Tunnel) | TBD |
+| Image | `raoshahzaib/lifequest-api:staging` | `raoshahzaib/lifequest-api:latest` |
 | Branch | `staging` | `main` |
-| Mobile | Expo dev build + Metro | Standalone preview / production APK |
 
-**One compose file.** The tunnel runs only under the `prod` profile:
+**Flow:** fix on `staging` → CI test + build → deploy to home lab, test on phone →
+merge `staging` → `main` → production deploy (Oracle K8s).
 
-```bash
-# staging (WSL)
-cd ~/lifequest/backend && docker compose up -d
-
-# production (home server)
-cd ~/lifequest/backend && docker compose --profile prod up -d
-```
-
-**Backend code lives in tarballs and is extracted to `~/lifequest/backend/`
-— that directory can be deleted. Always `ls` to verify it exists before working.**
-
-**WSL networking (reboot ritual):** Windows → WSL IP TCP is broken. Use
-portproxy `v4tov6` → IPv6 localhost `::1` for ports 8000 + 8081, never the WSL
-IP. Never use mirrored networking (Windows 10 build 19045 does not support it).
-
----
-
-## Local development (staging)
-
-### Backend
+## Local development
 
 ```bash
-cd ~/lifequest/backend
-docker compose up -d
-docker compose ps
-# health: GET http://localhost:8000/api/v1/health -> {"status":"ok","app":"lifequest-api","version":"0.1.0"}
+# backend (WSL or any machine with Docker)
+cd backend && docker compose up -d
+curl http://localhost:8000/api/v1/health   # {"status":"ok",...}
+
+# mobile
+cd mobile && npx expo start             # Metro on :8081
 ```
 
-- API runs uvicorn with **2 workers, `--reload` OFF** — restart the container
-  after code changes: `docker compose restart api`.
-- Worker (`python -m app.worker`) has **no auto-reload** — restart after changes.
-- Migrations are plain SQL; `deploy-backend.sh` runs them after `compose up`.
-- Never hardcode passwords/secrets. Secrets live in OCI Vault / `.env`, delivered
-  via ExternalSecrets. JWT secret comes from env.
-
-### Mobile
-
-```bash
-cd ~/lifequest/mobile
-npx expo start        # Metro on :8081
-```
-
-- `EXPO_PUBLIC_API_URL` already ends in `/api/v1` — screen paths are prefix-less.
+- API runs uvicorn with **2 workers, `--reload` OFF** — restart after code
+  changes: `docker compose restart api`. Worker has no auto-reload either.
 - **JS/TS-only changes need NO build** — press `r` in Metro to reload.
-- A build is needed **only** for native changes: new native module, `app.json`
+  A build is needed **only** for native changes: new native module, `app.json`
   change, new permission.
-- Dev build **cannot work offline** (it loads its JS bundle from Metro).
-  Offline behaviour is tested on a standalone preview APK, not the dev build.
-- The phone and the Windows machine must be on the **same Wi-Fi**.
+- `EXPO_PUBLIC_API_URL` already ends in `/api/v1` — screen paths are prefix-less.
+- Dev build **cannot work offline** (it loads JS from Metro). Offline tests
+  need a standalone preview APK. Phone + dev machine must be on the same Wi-Fi.
+- Never hardcode passwords/secrets. JWT secret comes from env.
 
----
-
-## Production deployment
-
-> Full deploy guide (local run, configuration, home-lab Tunnel, cloud
-> container services): [DEPLOY.md](DEPLOY.md).
-
-Production is the home server (`192.168.2.105`) behind a Cloudflare Tunnel
-(`api.raoshahzaib.site`). There is no public IP, so GitHub-hosted runners
-cannot SSH it — deployment is pull-based / manual from the server.
+## Deploying staging (home lab)
 
 ```bash
-# on the server (~/lifequest/backend)
-./deploy-backend.sh    # compose --profile prod up, runs migrations, health-checks /api/v1/health
+# on the server (100.120.155.67, /home/eilaf/lifequest-staging)
+docker compose pull && docker compose --profile prod up -d
+# migrations run once per fresh DB: for f in migrations/*.sql; do ... done
+curl https://api.raoshahzaib.site/api/v1/health
 ```
 
-- Fresh production DB has **no tables** — the Dockerfile never runs migrations;
-  `deploy-backend.sh` runs them after `compose up`.
-- EAS preview APK: `eas build --profile preview --platform android`.
-  `app.json` is `LifeQuest` (package `com.raoshahzaib.lifequest`); the **slug
-  stays `mobile`** because the EAS projectId is registered under it.
-- Preview profile bakes `EXPO_PUBLIC_API_URL=https://api.raoshahzaib.site/api/v1`
-  — no manual address entry in the app.
-
----
+Full guide: [DEPLOY.md](DEPLOY.md). The tunnel runs only under the `prod`
+profile. The image is pulled from Docker Hub — no build on the server.
 
 ## CI/CD
 
-`.github/workflows/ci.yml` runs on push to `staging` / `main` and on PRs to `main`:
+`.github/workflows/ci.yml` runs on push to `staging` / `main` and PRs to `main`:
 
-1. `backend-check` — pip install + `python -m compileall backend/app`
-2. `mobile-check` — `npm ci` + `npx tsc --noEmit`
-3. `build-push` — builds the backend image and pushes it to Docker Hub
-   (`raoshahzaib/lifequest-api:staging` from `staging`, `latest` + `sha-*` from `main`)
+1. `backend-check` — pip install + compileall
+2. `mobile-check` — npm ci + tsc
+3. `build-push` — builds + pushes `raoshahzaib/lifequest-api`
+   (`:staging` from `staging`, `:latest` + `sha-*` from `main`)
+4. `trivy-scan` — blocks on CRITICAL only (HIGH reported in the log)
+5. `smoke-test` — the pushed image must start and answer `/health`
 
-Secrets: `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`. The image name is **hardcoded**
-as `raoshahzaib/lifequest-api` in `ci.yml` (the username secret carries a trailing
-newline that broke tag generation).
-
-**Runners: GitHub-hosted only — no self-hosted runner.** Production deploy
-mechanism (server-pull vs Tunnel-SSH) is still to be decided.
-
-**Branch flow:** fix on `staging` → CI test + build → WSL staging test →
-merge `staging` → `main` → production deploy.
-
----
+Secrets: `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`. **Runners: GitHub-hosted only.**
 
 ## OTA updates (EAS Update)
 
 JS/TS fixes reach users **without a new APK**. Native changes still need a build.
 
-- `expo-updates` is installed; `app.json` has
-  `updates.url: https://u.expo.dev/7407bf0a-4b3f-45ab-b15a-735f37adbab9`.
-- `src/updates/useAppUpdate.ts` checks for an update on app launch (only when
-  logged in). If one is available it downloads in the background and shows
-  **"Naya update available"** — tapping **"Update karein"** restarts the app
-  on the new code. Silent when offline or when no update exists.
-- Publish an update:
-
 ```bash
-cd ~/lifequest/mobile
+cd mobile
 EXPO_PUBLIC_API_URL=https://api.raoshahzaib.site/api/v1 eas update --branch preview --message "what changed"
 # select environment: preview
 ```
 
-> **Gotcha:** `eas update` run locally picks up the local `.env` (staging URL
-> `http://192.168.5.100:8000`). Always force the production URL on the command
-> line as above, or the published update will point the app at the staging
-> server and it will fall back to cached/offline mode.
-
----
+> **Gotcha:** `eas update` run locally picks up the local `.env` (staging URL).
+> Always force the production URL on the command line as above.
 
 ## Auth & offline-first
 
 - **WhatsApp-style login:** log in once, stay logged in until explicit logout.
   Tokens live in SecureStore. The app **never clears tokens on a network error**
   — only when the server rejects the refresh (401/403). A cached profile from
-  SQLite opens the app offline; it re-validates in the background when online.
+  SQLite opens the app offline.
 - **Offline-first ("Phone pehle, server baad mein"):** health logs, walks and
-  exercise are saved to on-device SQLite first and synced oldest-first on
-  reconnect. Read screens (Profile, Achievements, Friends, Leaderboard,
-  Challenges, Map hexes) show the last-synced cache with a "Cached" label.
-  Only fresh hex ownership, live dots, friend/challenge sends, first login and
-  push need the server.
+  exercise save to on-device SQLite first and sync oldest-first on reconnect.
+  Read screens show the last-synced cache with a "Cached" label. Only fresh
+  hex ownership, live dots, friend/challenge sends, first login and push need
+  the server.
 - **Live dots are friends-only.** No walk-required tests — verify via scripts /
   simulation only.
 
@@ -204,4 +135,3 @@ Password `0123456789` for all: `rao@testmail.com` (Rao, admin),
 `ayesha.test@testmail.com`, `bilal.test@testmail.com`, `fatima.test@testmail.com`,
 `usman.test@testmail.com`. Load-test accounts `load01@testmail.com`… use
 `LoadTest0123456789`.
-
