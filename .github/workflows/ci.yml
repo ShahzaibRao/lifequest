@@ -110,6 +110,17 @@ jobs:
             type=raw,value=staging,enable=${{ github.ref == 'refs/heads/staging' }}
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=sha,enable=${{ github.ref == 'refs/heads/main' }}
+      - name: Pick distroless variant (debug for staging, nonroot for main)
+        # Staging gets the :debug flavour (busybox shell, for debugging
+        # inside the container); main/production gets :nonroot (no shell).
+        # Same Python 3.13, same Debian 13 base, same libraries — only
+        # the shell differs, so staging still matches production.
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/staging" ]; then
+            echo "VARIANT=debug" >> "$GITHUB_ENV"
+          else
+            echo "VARIANT=nonroot" >> "$GITHUB_ENV"
+          fi
       - name: Build + push image
         uses: docker/build-push-action@v6
         with:
@@ -117,6 +128,8 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            DISTROLESS_VARIANT=${{ env.VARIANT }}
 
   trivy-scan:
     needs: [build-push]
