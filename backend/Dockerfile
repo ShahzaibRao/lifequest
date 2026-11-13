@@ -20,6 +20,18 @@
 # (gcr.io/distroless/python3-debian13:debug, has a busybox shell).
 # The app is started with `python3 -m uvicorn` — there is no `uvicorn`
 # binary on PATH and no shell to resolve one.
+#
+# DISTROLESS_VARIANT picks the distroless flavour (used in Stage 2):
+#   nonroot (default, production) — no shell, runs as user 65532.
+#   debug   (staging)             — same Python/base/libs, plus a
+#     busybox shell so you can `docker exec` in and debug.
+# CI passes debug for the staging branch and nonroot for main, so
+# staging matches production except for the shell.
+# NOTE: this ARG MUST be declared before the first FROM — an ARG used
+# in a FROM is only visible if declared in the global scope above it.
+# (Declaring it between stages makes it undefined in the FROM line and
+# the build fails with "invalid reference format".)
+ARG DISTROLESS_VARIANT=nonroot
 
 # ---------- Stage 1: builder ----------
 FROM python:3.13-slim AS builder
@@ -39,13 +51,6 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --target /app/deps -r requirements.txt
 
 # ---------- Stage 2: runtime (distroless) ----------
-# DISTROLESS_VARIANT picks the distroless flavour:
-#   nonroot (default, production) — no shell, runs as user 65532.
-#   debug   (staging)             — same Python/base/libs, plus a
-#     busybox shell so you can `docker exec` in and debug.
-# CI passes debug for the staging branch and nonroot for main, so
-# staging matches production except for the shell.
-ARG DISTROLESS_VARIANT=nonroot
 FROM gcr.io/distroless/python3-debian13:${DISTROLESS_VARIANT}
 
 WORKDIR /app
