@@ -56,4 +56,8 @@ EXPOSE 8000
 
 # Compose overrides this with --workers 2 for production; the image
 # default is the plain command (also used by the CI smoke test).
-CMD ["/usr/bin/python3", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# NOTE: distroless python3 already has ENTRYPOINT ["/usr/bin/python3"],
+# so the CMD is ONLY the arguments to python — do NOT repeat the
+# python3 path here, or python will try to run the python3 BINARY as
+# a script (SyntaxError: source code cannot contain null bytes).
+CMD ["-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
