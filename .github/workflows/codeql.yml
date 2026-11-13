@@ -1,0 +1,41 @@
+# LifeQuest CodeQL — source-code security scanning (GitHub native).
+# Scans Python (backend) + JavaScript/TypeScript (mobile) for security
+# vulnerabilities (SQL injection, XSS, hardcoded secrets, insecure auth,
+# and more). Results appear in the repo's Security tab under "Code scanning".
+# Runs on push + PR to staging/main, and weekly on Mondays.
+name: CodeQL
+
+on:
+  push:
+    branches: [staging, main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 6 * * 1"
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, javascript-typescript]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          # Only scan our code, not dependencies:
+          #   python -> backend/ ; javascript-typescript -> mobile/
+          queries: security-and-quality
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+      - name: Analyze
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
