@@ -134,6 +134,10 @@ jobs:
           format: sarif
           output: trivy-results.sarif
           severity: CRITICAL
+          # SARIF is built with ALL severities by default, which makes the
+          # exit-code check see HIGHs too. Limit it so the gate only sees
+          # CRITICAL (HIGH stays visible in the table step below).
+          limit-severities-for-sarif: true
           exit-code: "1"
       - name: Upload Trivy results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v3
