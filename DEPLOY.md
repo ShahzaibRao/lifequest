@@ -6,12 +6,19 @@ Run LifeQuest anywhere Docker runs. The backend is one Docker image
 
 > **TL;DR — just try it:**
 > ```bash
-> curl -O https://raw.githubusercontent.com/ShahzaibRao/lifequest/staging/backend/docker-compose.yml
+> git clone https://github.com/ShahzaibRao/lifequest.git
+> cd lifequest/backend
 > docker compose up -d
+> # migrations — REQUIRED once on a fresh DB (the image never runs them).
+> # Without this, /health says ok but register/login fail ("relation does not exist").
+> for f in migrations/*.sql; do
+>   docker compose exec -T db psql -U lifequest -d lifequest < "$f"
+> done
 > curl http://localhost:8000/api/v1/health
 > #    -> {"status":"ok","app":"lifequest-api","version":"0.1.0"}
 > ```
 > No `.env` file needed for a first run — defaults are built in.
+> (Cloning the repo is required — the compose file alone has no migrations.)
 > Stop with `docker compose down` (data stays in the `lifequest-data`
 > volume; add `-v` only if you really want to delete the database).
 
