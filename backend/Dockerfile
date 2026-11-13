@@ -1,18 +1,28 @@
-# LifeQuest API — multi-stage image (small + fewer vulnerabilities).
+# LifeQuest API — distroless image (minimal attack surface).
 #
 # Stage 1 (builder): install Python dependencies. Build tools (gcc) live
 # ONLY here — they never reach the final image.
-# Stage 2 (runtime): a fresh slim image with ONLY the installed packages
-# + the app code. No compiler, no apt lists, no pip cache.
+# Stage 2 (runtime): Google's distroless Python image. It contains ONLY
+# Python + the app code. No shell, no apt, no mount/login/perl/ncurses
+# and no other OS tools — so the OS vulnerabilities in those packages
+# cannot exist in this image at all. Runs as non-root user (65532).
 #
-# Why: a smaller image means a smaller attack surface — fewer OS packages
-# that could carry vulnerabilities, and a faster pull/deploy.
-# Note: this does NOT fix vulnerabilities in packages the app itself needs
-# (e.g. starlette, a FastAPI dependency) — those need a dependency upgrade.
-# It removes the *unneeded* stuff around them.
+# Why distroless: the 49 remaining HIGHs in the slim image all live in
+# Debian OS packages the web API never uses. Removing the packages
+# removes the vulnerabilities. (Verified by Trivy on CI.)
+#
+# Python version MUST match between stages: the builder is python:3.13
+# because distroless python3-debian13 is Python 3.13 (Debian 13).
+# A 3.12 builder + 3.13 runtime would break compiled extensions (.so).
+#
+# Tradeoff: no shell in the image — `docker exec ... bash` does not
+# work. Debug via `docker logs`, or use the :debug variant of the image
+# (gcr.io/distroless/python3-debian13:debug, has a busybox shell).
+# The app is started with `python3 -m uvicorn` — there is no `uvicorn`
+# binary on PATH and no shell to resolve one.
 
 # ---------- Stage 1: builder ----------
-FROM python:3.12-slim AS builder
+FROM python:3.13-slim AS builder
 
 WORKDIR /code
 
@@ -23,25 +33,27 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Install dependencies first (better layer caching: requirements change
-# far less often than application code). --prefix keeps them in one
-# folder (/install) so the runtime stage can copy just that.
+# far less often than application code). --target puts them in one flat
+# folder (/app/deps) so the runtime stage can copy just that.
 COPY requirements.txt .
-RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+RUN pip install --no-cache-dir --target /app/deps -r requirements.txt
 
-# ---------- Stage 2: runtime ----------
-FROM python:3.12-slim
+# ---------- Stage 2: runtime (distroless) ----------
+FROM gcr.io/distroless/python3-debian13:nonroot
 
-WORKDIR /code
+WORKDIR /app
 
 # Copy ONLY the installed Python packages from the builder.
-# No gcc, no apt cache, no pip cache in the final image.
-COPY --from=builder /install /usr/local
+COPY --from=builder /app/deps /app/deps
 
 # Copy the app code.
 COPY app/ ./app/
 
+# Make the flat deps dir importable (there is no site-packages here).
+ENV PYTHONPATH=/app/deps
+
 EXPOSE 8000
 
-# Compose overrides this with --reload for local development; the
-# image default is the plain production-style command.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Compose overrides this with --workers 2 for production; the image
+# default is the plain command (also used by the CI smoke test).
+CMD ["/usr/bin/python3", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
