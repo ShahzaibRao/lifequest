@@ -99,6 +99,9 @@ npx expo start        # Metro on :8081
 
 ## Production deployment
 
+> Full deploy guide (local run, configuration, home-lab Tunnel, cloud
+> container services): [DEPLOY.md](DEPLOY.md).
+
 Production is the home server (`192.168.2.105`) behind a Cloudflare Tunnel
 (`api.raoshahzaib.site`). There is no public IP, so GitHub-hosted runners
 cannot SSH it — deployment is pull-based / manual from the server.
@@ -201,3 +204,4 @@ Password `0123456789` for all: `rao@testmail.com` (Rao, admin),
 `ayesha.test@testmail.com`, `bilal.test@testmail.com`, `fatima.test@testmail.com`,
 `usman.test@testmail.com`. Load-test accounts `load01@testmail.com`… use
 `LoadTest0123456789`.
+
