@@ -137,3 +137,11 @@ jobs:
         if: always()
         with:
           sarif_file: trivy-results.sarif
+      - name: Show Trivy findings as a table (for the job log)
+        # The SARIF step above is the blocking gate; this step just prints
+        # the same findings in readable form so we can see exactly which
+        # packages/versions are flagged without opening the Security tab.
+        # Report-only (continue-on-error) — the gate already ran above.
+        if: always()
+        continue-on-error: true
+        run: trivy image --severity CRITICAL,HIGH --exit-code 0 "${{ env.IMAGE }}"
