@@ -1,7 +1,16 @@
-# LifeQuest CI — test + build + push to Docker Hub.
+# LifeQuest CI — test + scan + build + push to Docker Hub.
 # staging branch -> image tag `staging` (WSL staging tests it).
 # main branch    -> image tags `latest` + `sha-<short>` (production).
-# Production deploy is a separate job on the self-hosted runner (home server).
+# Production deploy is pull-based / manual from the server (see DEPLOY.md).
+#
+# Quality gates (in order):
+#   1. backend-check / mobile-check  — compile + typecheck (blocking)
+#   2. backend-audit / mobile-audit  — known-vulnerable dependencies
+#      (report-only for now: continue-on-error, see the job logs)
+#   3. build-push                    — Docker image -> Docker Hub
+#   4. trivy-scan                    — image vulnerabilities (blocking on
+#      CRITICAL/HIGH; results also in the Security tab as SARIF)
+# CodeQL (source-code scanning) lives in its own workflow: codeql.yml.
 name: LifeQuest CI
 
 on:
@@ -39,6 +48,42 @@ jobs:
         working-directory: mobile
         run: npx tsc --noEmit
 
+  backend-audit:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Audit Python dependencies (pip-audit)
+        # Reports known vulnerabilities in backend/requirements.txt.
+        # Report-only for now (continue-on-error). Remove that line to make
+        # it a blocking gate once the findings are triaged.
+        run: |
+          pip install --no-cache-dir pip-audit
+          pip-audit -r backend/requirements.txt
+
+  mobile-audit:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - name: Install mobile deps
+        working-directory: mobile
+        run: npm ci
+      - name: Audit JS dependencies (npm audit, high+)
+        # Reports high/critical vulnerabilities in mobile/package-lock.json.
+        # Report-only for now (continue-on-error). Remove that line to make
+        # it a blocking gate once the findings are triaged.
+        working-directory: mobile
+        run: npm audit --audit-level=high
+
   build-push:
     needs: [backend-check, mobile-check]
     runs-on: ubuntu-latest
@@ -65,3 +110,30 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+  trivy-scan:
+    needs: [build-push]
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    steps:
+      - name: Which image tag was just pushed?
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/staging" ]; then
+            echo "IMAGE=raoshahzaib/lifequest-api:staging" >> "$GITHUB_ENV"
+          else
+            echo "IMAGE=raoshahzaib/lifequest-api:latest" >> "$GITHUB_ENV"
+          fi
+      - name: Scan image with Trivy (fail on CRITICAL/HIGH)
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: ${{ env.IMAGE }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+      - name: Upload Trivy results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
