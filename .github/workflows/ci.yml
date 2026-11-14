@@ -22,9 +22,9 @@ name: LifeQuest CI
 
 on:
   push:
-    branches: [staging, main]
+    branches: [dev, staging, main, 'feature/**']
   pull_request:
-    branches: [main]
+    branches: [dev, main]
 
 jobs:
   backend-check:
@@ -92,6 +92,9 @@ jobs:
         run: npm audit --audit-level=high
 
   build-push:
+    # Only staging/main push images to Docker Hub. dev/feature branches
+    # run the check + audit jobs only (no image build, no Trivy/smoke).
+    if: github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/main'
     needs: [backend-check, mobile-check]
     runs-on: ubuntu-latest
     steps:

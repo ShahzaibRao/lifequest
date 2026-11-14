@@ -1,18 +1,13 @@
-"""Auth request/response shapes (LLD Section 2.1)."""
+"""Auth request/response shapes (LLD Section 2.1).
+Google OAuth only — no passwords (RegisterRequest/LoginRequest removed).
+"""
 import uuid
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr
 
 
-class RegisterRequest(BaseModel):
-    email: EmailStr
-    password: str = Field(min_length=10)
-    display_name: str = Field(min_length=1, max_length=100)
-
-
-class LoginRequest(BaseModel):
-    email: EmailStr
-    password: str
+class GoogleLoginRequest(BaseModel):
+    id_token: str
 
 
 class RefreshRequest(BaseModel):
