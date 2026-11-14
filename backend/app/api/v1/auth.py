@@ -57,6 +57,8 @@ def google_login(payload: GoogleLoginRequest, db: Session = Depends(get_db)):
         for a in [
             settings.google_client_id,
             settings.google_android_client_id,
+            settings.google_dev_android_client_id,
+            settings.google_staging_android_client_id,
             settings.google_ios_client_id,
         ]
         if a
