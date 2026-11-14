@@ -53,15 +53,29 @@ def _issue_pair(db: Session, user: User) -> TokenResponse:
 
 @router.post("/google", response_model=TokenResponse)
 def google_login(payload: GoogleLoginRequest, db: Session = Depends(get_db)):
-    if not settings.google_client_id:
-        raise HTTPException(status_code=503, detail="google login not configured")
-    try:
-        claims = google_id_token.verify_oauth2_token(
-            payload.id_token,
-            google_requests.Request(),
+    allowed_audiences = [
+        a
+        for a in [
             settings.google_client_id,
-        )
-    except ValueError:
+            settings.google_android_client_id,
+            settings.google_ios_client_id,
+        ]
+        if a
+    ]
+    if not allowed_audiences:
+        raise HTTPException(status_code=503, detail="google login not configured")
+    claims = None
+    for aud in allowed_audiences:
+        try:
+            claims = google_id_token.verify_oauth2_token(
+                payload.id_token,
+                google_requests.Request(),
+                aud,
+            )
+            break
+        except ValueError:
+            continue
+    if claims is None:
         raise HTTPException(status_code=401, detail="invalid google token")
     if not claims.get("email_verified"):
         raise HTTPException(status_code=401, detail="email not verified")
@@ -186,3 +200,4 @@ def update_me(
         bio=current_user.bio,
         avatar_key=current_user.avatar_key,
     )
+
