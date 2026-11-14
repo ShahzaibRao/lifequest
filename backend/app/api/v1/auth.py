@@ -1,33 +1,30 @@
 """Auth endpoints (LLD Section 2.1).
-Register 201 / duplicate 409. Login 401 generic on bad credentials.
-Refresh rotates (old revoked). Logout idempotent. GET /me for testing.
+Google OAuth only — no passwords. POST /auth/google takes a Google
+ID token, verifies it, finds or creates the user, and returns our
+JWT pair. Refresh rotates (old revoked). Logout idempotent.
+GET /me for testing.
 """
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, status
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token as google_id_token
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
+from app.core.config import settings
 from app.core.database import get_db
-from app.core.rate_limit import (
-    check_login_allowed,
-    record_login_failure,
-    record_login_success,
-)
 from app.core.security import (
     create_access_token,
     create_refresh_token,
     decode_token,
-    hash_password,
     hash_token,
-    verify_password,
 )
 from app.models.user import RefreshToken, User
 from app.schemas.auth import (
-    LoginRequest,
+    GoogleLoginRequest,
     MeResponse,
     RefreshRequest,
-    RegisterRequest,
     TokenResponse,
     UserResponse,
 )
@@ -54,39 +51,49 @@ def _issue_pair(db: Session, user: User) -> TokenResponse:
     return TokenResponse(access_token=access_token, refresh_token=refresh_token)
 
 
-@router.post("/register", response_model=UserResponse, status_code=201)
-def register(payload: RegisterRequest, db: Session = Depends(get_db)):
-    existing = db.query(User).filter(User.email == payload.email).first()
-    if existing is not None:
-        raise HTTPException(status_code=409, detail="email already registered")
-    user = User(
-        email=payload.email,
-        password_hash=hash_password(payload.password),
-        display_name=payload.display_name,
-    )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    return UserResponse(
-        user_id=user.id, display_name=user.display_name, email=user.email
-    )
-
-
-@router.post("/login", response_model=TokenResponse)
-def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)):
-    client_ip = request.client.host if request.client else "unknown"
-    allowed, retry_after = check_login_allowed(payload.email, client_ip)
-    if not allowed:
-        raise HTTPException(
-            status_code=429,
-            detail="too many login attempts, try again later",
-            headers={"Retry-After": str(retry_after)},
+@router.post("/google", response_model=TokenResponse)
+def google_login(payload: GoogleLoginRequest, db: Session = Depends(get_db)):
+    if not settings.google_client_id:
+        raise HTTPException(status_code=503, detail="google login not configured")
+    try:
+        claims = google_id_token.verify_oauth2_token(
+            payload.id_token,
+            google_requests.Request(),
+            settings.google_client_id,
         )
-    user = db.query(User).filter(User.email == payload.email).first()
-    if user is None or not verify_password(payload.password, user.password_hash):
-        record_login_failure(payload.email)
-        raise HTTPException(status_code=401, detail="invalid email or password")
-    record_login_success(payload.email)
+    except ValueError:
+        raise HTTPException(status_code=401, detail="invalid google token")
+    if not claims.get("email_verified"):
+        raise HTTPException(status_code=401, detail="email not verified")
+    email = claims.get("email")
+    sub = claims.get("sub")
+    name = claims.get("name")
+    if not email or not sub:
+        raise HTTPException(status_code=401, detail="invalid google token")
+    # Find by Google sub first, else by email (link on first Google login).
+    user = db.query(User).filter(User.google_sub == sub).first()
+    if user is None:
+        user = db.query(User).filter(User.email == email).first()
+        if user is not None:
+            if user.google_sub is None:
+                user.google_sub = sub
+                db.commit()
+                db.refresh(user)
+            elif user.google_sub != sub:
+                raise HTTPException(
+                    status_code=401,
+                    detail="email already linked to another google account",
+                )
+    if user is None:
+        user = User(
+            email=email,
+            password_hash=None,
+            google_sub=sub,
+            display_name=name or email.split("@")[0],
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
     return _issue_pair(db, user)
 
 
