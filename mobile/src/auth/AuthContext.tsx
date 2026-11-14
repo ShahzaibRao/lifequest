@@ -30,8 +30,7 @@ const ME_CACHE_KEY = "auth:me";
 type AuthContextValue = {
   user: MeUser | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, displayName: string) => Promise<void>;
+  signInWithGoogle: (idToken: string) => Promise<void>;
   logout: () => Promise<void>;
 };
 
@@ -86,31 +85,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
-  const login = async (email: string, password: string) => {
-    const res = await apiFetch("/auth/login", {
+  const signInWithGoogle = async (idToken: string) => {
+    const res = await apiFetch("/auth/google", {
       method: "POST",
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ id_token: idToken }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      throw new Error((data as { detail?: string }).detail ?? "Login failed");
+      throw new Error((data as { detail?: string }).detail ?? "Google sign-in failed");
     }
     await saveTokens(data.access_token, data.refresh_token);
     const me = await apiJson<MeUser>("/auth/me");
     await setCached(ME_CACHE_KEY, me);
     setUser(me);
-  };
-
-  const register = async (email: string, password: string, displayName: string) => {
-    const res = await apiFetch("/auth/register", {
-      method: "POST",
-      body: JSON.stringify({ email, password, display_name: displayName }),
-    });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw new Error((data as { detail?: string }).detail ?? "Register failed");
-    }
-    await login(email, password);
   };
 
   const logout = async () => {
@@ -131,7 +118,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const value = useMemo(
-    () => ({ user, loading, login, register, logout }),
+    () => ({ user, loading, signInWithGoogle, logout }),
     [user, loading],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

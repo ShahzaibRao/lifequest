@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     )
     jwt_secret: str = ""
     jwt_algorithm: str = "HS256"
+    google_client_id: str = ""
     redis_url: str = "redis://redis:6379/0"
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 30
