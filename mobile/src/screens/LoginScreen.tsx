@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Button, StyleSheet, Text, View } from "react-native";
 import * as Google from "expo-auth-session/providers/google";
+import { ResponseType } from "expo-auth-session";
 import { useAuth } from "../auth/AuthContext";
 import { useLanguage } from "../i18n/LanguageContext";
 
@@ -11,9 +12,10 @@ export default function LoginScreen() {
   const [busy, setBusy] = useState(false);
 
   const [request, response, promptAsync] = Google.useAuthRequest({
-    expoClientId: process.env.EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID,
+    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
     androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
     iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+    responseType: ResponseType.IdToken,
   });
 
   useEffect(() => {
@@ -45,7 +47,7 @@ export default function LoginScreen() {
 
   const onGooglePress = () => {
     if (
-      !process.env.EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID &&
+      !process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID &&
       !process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID &&
       !process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID
     ) {
