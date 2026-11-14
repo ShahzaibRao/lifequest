@@ -2,13 +2,11 @@ import React, { useCallback, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
-import { useAuth } from "../auth/AuthContext";
 import { getPendingCount } from "../walk/walkStore";
 import { drainExerciseOutbox, getPendingExerciseCount, getPendingHealthCount, syncPendingHealthLogs } from "../health/healthStore";
 import { syncPendingSessions } from "../sync/sync";
 import { apiJson } from "../api/client";
 import { useLanguage } from "../i18n/LanguageContext";
-import { AvatarPreset } from "../components/Avatar";
 import * as Location from "expo-location";
 import { downloadHomePack, getHomePack } from "../map/offlineMap";
 
@@ -41,7 +39,6 @@ type Profile = {
 };
 
 export default function HomeScreen({ navigation }: any) {
-  const { user } = useAuth();
   const { t } = useLanguage();
   const [pending, setPending] = useState(0);
   const [syncing, setSyncing] = useState(false);

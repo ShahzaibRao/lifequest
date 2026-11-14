@@ -69,7 +69,6 @@ class MonthRecords(BaseModel):
 @router.get("/records", response_model=MonthRecords)
 def month_records(year: int, month: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Every day of the given month with any walking session, newest first."""
-    import calendar as _cal
 
     if not (1 <= month <= 12):
         from fastapi import HTTPException
@@ -77,7 +76,6 @@ def month_records(year: int, month: int, current_user: User = Depends(get_curren
         raise HTTPException(status_code=422, detail="month must be 1-12")
     from datetime import date as _date
 
-    days_in_month = _cal.monthrange(year, month)[1]
     sessions = db.query(WalkingSession).filter(WalkingSession.user_id == current_user.id).all()
     xp_rows = db.query(XpLedger).filter(XpLedger.user_id == current_user.id).all()
     by_day: dict = {}
