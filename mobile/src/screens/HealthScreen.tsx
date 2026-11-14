@@ -10,7 +10,6 @@ import {
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import * as Crypto from "expo-crypto";
 import { apiJson } from "../api/client";
 import {
   getLocalSummary,

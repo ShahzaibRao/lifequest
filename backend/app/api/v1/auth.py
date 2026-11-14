@@ -26,7 +26,6 @@ from app.schemas.auth import (
     MeResponse,
     RefreshRequest,
     TokenResponse,
-    UserResponse,
 )
 from app.schemas.profile import (
     AVATAR_PRESET_KEYS,

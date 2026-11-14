@@ -4,7 +4,6 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import * as Crypto from "expo-crypto";
 import * as Location from "expo-location";
 import { Pedometer } from "expo-sensors";
-import * as TaskManager from "expo-task-manager";
 import { WALK_TASK } from "../walk/backgroundTask";
 import WalkLiveMap from "../walk/WalkLiveMap";
 import {
