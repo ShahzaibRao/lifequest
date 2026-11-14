@@ -1,0 +1,105 @@
+# LifeQuest mobile build — EAS Build + OTA in CI.
+#
+# When mobile code changes on staging/main:
+#   - JS-only change  -> `eas update` (OTA) to the preview branch.
+#     The installed preview APK picks it up on next launch. No rebuild.
+#   - Native change   -> `eas build --profile preview` (new APK).
+#     Native = anything that changes the native shell or the runtime:
+#     app.json, eas.json, package.json, package-lock.json, app icon/splash.
+#     A build also includes the JS changes, so no separate OTA is needed.
+#
+# The preview build is a standalone APK (distribution: internal) with the
+# staging API baked in (EXPO_PUBLIC_API_URL in eas.json preview env) plus
+# the Google OAuth client IDs — install it on any phone, no Metro, no
+# local server address. Download it from the EAS build page (link in the
+# job log / EAS dashboard, with a QR code for the phone).
+#
+# Requires the EXPO_TOKEN repository secret (Expo access token):
+#   expo.dev -> Account Settings -> Access Tokens -> Create token
+#   GitHub repo -> Settings -> Secrets and variables -> Actions
+#   -> New repository secret, name EXPO_TOKEN.
+# Without it, both jobs fail with a clear "EXPO_TOKEN is not set" error.
+#
+# runtimeVersion policy is appVersion (app.json), so OTA only reaches
+# builds with the same app version. Bumping the version in app.json is a
+# native change -> triggers a rebuild, which is correct.
+name: Mobile Build
+
+on:
+  push:
+    branches: [staging, main]
+    paths: ['mobile/**']
+  workflow_dispatch:
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      native: ${{ steps.filter.outputs.native }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            native:
+              - 'mobile/app.json'
+              - 'mobile/eas.json'
+              - 'mobile/package.json'
+              - 'mobile/package-lock.json'
+              - 'mobile/assets/icon.png'
+              - 'mobile/assets/splash.png'
+              - 'mobile/assets/adaptive-icon.png'
+              - 'mobile/assets/android-icon-foreground.png'
+              - 'mobile/assets/android-icon-background.png'
+              - 'mobile/assets/android-icon-monochrome.png'
+
+  ota:
+    # JS-only change: ship it over the air, no rebuild.
+    needs: changes
+    if: needs.changes.outputs.native == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - name: Install mobile deps
+        working-directory: mobile
+        run: npm ci
+      - name: Check EXPO_TOKEN
+        run: |
+          if [ -z "${{ secrets.EXPO_TOKEN }}" ]; then
+            echo "::error::EXPO_TOKEN secret is not set. Create an Expo access token (expo.dev -> Access Tokens) and add it as a repository secret named EXPO_TOKEN."
+            exit 1
+          fi
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - name: Publish OTA update (preview branch)
+        working-directory: mobile
+        run: eas update --branch preview --message "OTA update ${{ github.sha }}" --non-interactive
+
+  build:
+    # Native change: build a fresh preview APK.
+    needs: changes
+    if: needs.changes.outputs.native == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check EXPO_TOKEN
+        run: |
+          if [ -z "${{ secrets.EXPO_TOKEN }}" ]; then
+            echo "::error::EXPO_TOKEN secret is not set. Create an Expo access token (expo.dev -> Access Tokens) and add it as a repository secret named EXPO_TOKEN."
+            exit 1
+          fi
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - name: Build preview APK
+        working-directory: mobile
+        run: eas build --profile preview --platform android --non-interactive --wait
