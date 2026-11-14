@@ -52,6 +52,9 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://lifequest:lifequest@db:5432/lifequest}
       JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-me-in-production}
       REDIS_URL: redis://redis:6379/0
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_ANDROID_CLIENT_ID: ${GOOGLE_ANDROID_CLIENT_ID:-}
+      GOOGLE_IOS_CLIENT_ID: ${GOOGLE_IOS_CLIENT_ID:-}
     ports:
       - "${API_PORT:-8000}:8000"
     command: -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
