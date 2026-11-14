@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     google_client_id: str = ""
     google_android_client_id: str = ""
+    google_dev_android_client_id: str = ""
+    google_staging_android_client_id: str = ""
     google_ios_client_id: str = ""
     redis_url: str = "redis://redis:6379/0"
     access_token_expire_minutes: int = 15
