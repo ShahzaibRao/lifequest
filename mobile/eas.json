@@ -7,7 +7,23 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
+      "env": {
+        "APP_VARIANT": "dev"
+      },
       "channel": "development"
+    },
+    "dev": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "APP_VARIANT": "dev",
+        "EXPO_PUBLIC_API_URL": "http://192.168.5.100:8000/api/v1",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "140218351606-kp5aoomu52g9up7e1vhmntc1bgrnaopn.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "140218351606-h71hmjb8kvmhepubc55abkqfnkth8gtk.apps.googleusercontent.com"
+      },
+      "channel": "dev"
     },
     "preview": {
       "distribution": "internal",
@@ -15,6 +31,7 @@
         "buildType": "apk"
       },
       "env": {
+        "APP_VARIANT": "staging",
         "EXPO_PUBLIC_API_URL": "https://api.raoshahzaib.site/api/v1",
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "140218351606-kp5aoomu52g9up7e1vhmntc1bgrnaopn.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "140218351606-h71hmjb8kvmhepubc55abkqfnkth8gtk.apps.googleusercontent.com"
@@ -23,6 +40,16 @@
     },
     "production": {
       "autoIncrement": true,
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "APP_VARIANT": "production",
+        "EXPO_PUBLIC_API_URL": "https://api.raoshahzaib.site/api/v1",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "140218351606-kp5aoomu52g9up7e1vhmntc1bgrnaopn.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "140218351606-h71hmjb8kvmhepubc55abkqfnkth8gtk.apps.googleusercontent.com"
+      },
       "channel": "production"
     }
   },
