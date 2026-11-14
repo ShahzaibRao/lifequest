@@ -15,7 +15,10 @@ export default function LoginScreen() {
     webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
     androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
     iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-    responseType: ResponseType.IdToken,
+    // Code flow: Google rejects response_type=id_token (implicit flow) for
+    // Android/iOS native clients (Error 400 invalid_request). The code is
+    // auto-exchanged for tokens (incl. id_token) by expo-auth-session.
+    responseType: ResponseType.Code,
   });
 
   useEffect(() => {
