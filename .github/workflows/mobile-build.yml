@@ -1,18 +1,22 @@
-# LifeQuest mobile build — EAS Build + OTA in CI.
+# LifeQuest mobile build — EAS Build + OTA in CI, one variant per branch.
 #
-# When mobile code changes on staging/main:
-#   - JS-only change  -> `eas update` (OTA) to the preview branch.
-#     The installed preview APK picks it up on next launch. No rebuild.
-#   - Native change   -> `eas build --profile preview` (new APK).
+#   dev branch     -> `dev` profile        (LifeQuest Dev, local WSL API)
+#   staging branch -> `preview` profile    (LifeQuest Staging, api.raoshahzaib.site)
+#   main branch    -> `production` profile (LifeQuest, production API)
+#
+# Each variant is a separate Android app (different package + name + icon),
+# so dev / staging / production install side by side instead of replacing
+# each other. The branch decides the profile AND the OTA channel:
+#   - JS-only change  -> `eas update` (OTA) to the branch's channel.
+#     The installed APK of that variant picks it up on next launch.
+#   - Native change   -> `eas build` (new APK) with the branch's profile.
 #     Native = anything that changes the native shell or the runtime:
-#     app.json, eas.json, package.json, package-lock.json, app icon/splash.
+#     app.config.js, eas.json, package.json, package-lock.json, app icons.
 #     A build also includes the JS changes, so no separate OTA is needed.
 #
-# The preview build is a standalone APK (distribution: internal) with the
-# staging API baked in (EXPO_PUBLIC_API_URL in eas.json preview env) plus
-# the Google OAuth client IDs — install it on any phone, no Metro, no
-# local server address. Download it from the EAS build page (link in the
-# job log / EAS dashboard, with a QR code for the phone).
+# Download the APK from the EAS build page (link in the job log / EAS
+# dashboard, with a QR code for the phone). No Metro, no local server
+# address needed for the staging/production APKs.
 #
 # Requires the EXPO_TOKEN repository secret (Expo access token):
 #   expo.dev -> Account Settings -> Access Tokens -> Create token
@@ -20,14 +24,20 @@
 #   -> New repository secret, name EXPO_TOKEN.
 # Without it, both jobs fail with a clear "EXPO_TOKEN is not set" error.
 #
-# runtimeVersion policy is appVersion (app.json), so OTA only reaches
-# builds with the same app version. Bumping the version in app.json is a
-# native change -> triggers a rebuild, which is correct.
+# runtimeVersion policy is appVersion (app.config.js), so OTA only reaches
+# builds with the same app version. Bumping the version is a native change
+# -> triggers a rebuild, which is correct.
+#
+# NOTE (Google login): the dev/staging Android OAuth client IDs in eas.json
+# are the production client ID as a placeholder until the dev + staging
+# Android OAuth clients are created in Google Cloud. Google login in the
+# Dev/Staging APKs will fail until those IDs are wired in; production login
+# is unaffected.
 name: Mobile Build
 
 on:
   push:
-    branches: [staging, main]
+    branches: [dev, staging, main]
     paths: ['mobile/**']
   workflow_dispatch:
 
@@ -36,6 +46,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       native: ${{ steps.filter.outputs.native }}
+      profile: ${{ steps.variant.outputs.profile }}
+      channel: ${{ steps.variant.outputs.channel }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -43,16 +55,29 @@ jobs:
         with:
           filters: |
             native:
-              - 'mobile/app.json'
+              - 'mobile/app.config.js'
               - 'mobile/eas.json'
               - 'mobile/package.json'
               - 'mobile/package-lock.json'
               - 'mobile/assets/icon.png'
+              - 'mobile/assets/icon-dev.png'
+              - 'mobile/assets/icon-staging.png'
               - 'mobile/assets/splash.png'
               - 'mobile/assets/adaptive-icon.png'
               - 'mobile/assets/android-icon-foreground.png'
+              - 'mobile/assets/android-icon-foreground-dev.png'
+              - 'mobile/assets/android-icon-foreground-staging.png'
               - 'mobile/assets/android-icon-background.png'
               - 'mobile/assets/android-icon-monochrome.png'
+      - name: Resolve build profile for this branch
+        id: variant
+        run: |
+          case "${{ github.ref_name }}" in
+            dev)     echo "profile=dev" >> "$GITHUB_OUTPUT"; echo "channel=dev" >> "$GITHUB_OUTPUT" ;;
+            staging) echo "profile=preview" >> "$GITHUB_OUTPUT"; echo "channel=preview" >> "$GITHUB_OUTPUT" ;;
+            main)    echo "profile=production" >> "$GITHUB_OUTPUT"; echo "channel=production" >> "$GITHUB_OUTPUT" ;;
+            *)       echo "profile=preview" >> "$GITHUB_OUTPUT"; echo "channel=preview" >> "$GITHUB_OUTPUT" ;;
+          esac
 
   ota:
     # JS-only change: ship it over the air, no rebuild.
@@ -79,12 +104,12 @@ jobs:
         with:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
-      - name: Publish OTA update (preview branch)
+      - name: Publish OTA update
         working-directory: mobile
-        run: eas update --branch preview --message "OTA update ${{ github.sha }}" --non-interactive
+        run: eas update --branch ${{ needs.changes.outputs.channel }} --message "OTA update ${{ github.sha }}" --non-interactive
 
   build:
-    # Native change: build a fresh preview APK.
+    # Native change: build a fresh APK for this branch's variant.
     # NOTE: `eas build` resolves the Expo config plugins locally first
     # (expo-secure-store, expo-sqlite, MapLibre, expo-location), so
     # node_modules must be installed before the build step.
@@ -111,6 +136,6 @@ jobs:
         with:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
-      - name: Build preview APK
+      - name: Build APK
         working-directory: mobile
-        run: eas build --profile preview --platform android --non-interactive --wait
+        run: eas build --profile ${{ needs.changes.outputs.profile }} --platform android --non-interactive --wait
