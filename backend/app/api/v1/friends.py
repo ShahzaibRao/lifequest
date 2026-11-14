@@ -11,7 +11,7 @@
 """
 
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import and_, func, or_
@@ -209,7 +209,6 @@ def list_requests(
         row.addressee_id if row.requester_id == current_user.id else row.requester_id
         for row in rows
     ]
-    names = _names(db, other_ids)
     users_by_id = _users_by_id(db, other_ids)
     sent: list[FriendRequestItem] = []
     received: list[FriendRequestItem] = []
